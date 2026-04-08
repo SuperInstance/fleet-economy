@@ -1,390 +1,55 @@
-interface TokenTransaction {
-  id: string;
-  provider: string;
-  service: string;
-  tokens: number;
-  cost: number;
-  timestamp: number;
-  budgetId: string;
-}
+const html = `<!DOCTYPE html>
+<html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0">
+<title>Fleet Economy</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{background:#0a0a0f;color:#f8fafc;font-family:'Inter',sans-serif;min-height:100vh;padding:2rem;line-height:1.6}
+.container{max-width:1000px;margin:0 auto}
+.hero{text-align:center;padding:3rem 0}
+h1{font-size:3rem;font-weight:700;margin-bottom:1rem;color:#f59e0b}
+.subtitle{font-size:1.25rem;color:#94a3b8;max-width:600px;margin:0 auto 2rem}
+.features{display:grid;grid-template-columns:repeat(auto-fit,minmax(250px,1fr));gap:1.5rem;margin:3rem 0}
+.card{background:#1e293b;border-radius:12px;padding:1.5rem;border-left:4px solid #f59e0b}
+.card h3{color:#f59e0b;margin-bottom:0.5rem}
+.endpoints{background:#0f172a;border-radius:8px;padding:1.5rem;margin:2rem 0}
+.ep{font-family:monospace;background:#1e293b;padding:0.5rem 1rem;border-radius:4px;margin:0.5rem 0;color:#94a3b8}
+.footer{margin-top:4rem;text-align:center;color:#64748b;font-size:0.9rem}
+.footer a{color:#f59e0b;text-decoration:none}
+</style></head><body><div class="container">
+<div class="hero"><h1>Fleet Economy</h1>
+<p class="subtitle">Token economy simulation and optimization. Track costs, simulate budgets, compare providers.</p></div>
+<div class="features">
+<div class="card"><h3>Token Tracking</h3><p>Real-time token usage across all fleet vessels and providers.</p></div>
+<div class="card"><h3>Cost Allocation</h3><p>Distribute costs across vessels, users, and operations.</p></div>
+<div class="card"><h3>Budget Simulation</h3><p>What-if scenarios for scaling, pricing changes, and usage patterns.</p></div>
+<div class="card"><h3>Provider Comparison</h3><p>Side-by-side cost analysis across all BYOK providers.</p></div>
+</div>
+<div class="endpoints">
+<h3 style="color:#f59e0b;margin-bottom:1rem">API Endpoints</h3>
+<div class="ep">GET /api/economy - Economy dashboard data</div>
+<div class="ep">POST /api/simulate - Run budget simulation</div>
+<div class="ep">GET /api/budgets - Budget tracking</div>
+<div class="ep">GET /health - Liveness check</div>
+</div>
+<div class="footer">
+<p>Part of the <a href="https://github.com/Lucineer/the-fleet">Cocapn fleet</a> - 180+ autonomous vessels.</p>
+<p><i>Built with <a href="https://github.com/Lucineer/cocapn-ai">Cocapn</a>.</i></p>
+<p>Superinstance &amp; Lucineer (DiGennaro et al.)</p>
+</div></div></body></html>`;
 
-interface Budget {
-  id: string;
-  name: string;
-  totalTokens: number;
-  spentTokens: number;
-  dailyLimit: number;
-  resetTime: number;
-  providers: string[];
-}
-
-interface SimulationRequest {
-  providers: Array<{
-    name: string;
-    costPerToken: number;
-    services: string[];
-  }>;
-  totalBudget: number;
-  durationDays: number;
-  tokenUsagePattern: 'steady' | 'burst' | 'gradual';
-}
-
-interface SimulationResult {
-  optimalProvider: string;
-  totalCost: number;
-  tokensUsed: number;
-  dailyBreakdown: Array<{
-    day: number;
-    tokens: number;
-    cost: number;
-    provider: string;
-  }>;
-  savingsComparedToWorst: number;
-}
-
-interface EconomyDashboard {
-  totalTokens: number;
-  spentTokens: number;
-  remainingTokens: number;
-  dailyAverage: number;
-  topProviders: Array<{
-    name: string;
-    tokens: number;
-    cost: number;
-  }>;
-  budgetHealth: Array<{
-    id: string;
-    name: string;
-    utilization: number;
-    status: 'healthy' | 'warning' | 'critical';
-  }>;
-}
-
-const DB = {
-  transactions: [] as TokenTransaction[],
-  budgets: [] as Budget[],
-};
-
-function createResponse(data: any, status = 200): Response {
-  const headers = {
-    "Content-Type": "application/json",
-    "X-Frame-Options": "DENY",
-    "X-Content-Type-Options": "nosniff",
-  };
-  
-  return new Response(JSON.stringify(data), {
-    status,
-    headers,
-  });
-}
-
-function calculateOptimalProvider(providers: SimulationRequest['providers'], tokens: number): string {
-  let optimal = providers[0].name;
-  let lowestCost = providers[0].costPerToken * tokens;
-  
-  for (const provider of providers.slice(1)) {
-    const cost = provider.costPerToken * tokens;
-    if (cost < lowestCost) {
-      lowestCost = cost;
-      optimal = provider.name;
-    }
-  }
-  
-  return optimal;
-}
-
-function generateTokenUsage(pattern: SimulationRequest['tokenUsagePattern'], days: number): number[] {
-  const usage: number[] = [];
-  
-  switch (pattern) {
-    case 'steady':
-      for (let i = 0; i < days; i++) {
-        usage.push(1000);
-      }
-      break;
-      
-    case 'burst':
-      for (let i = 0; i < days; i++) {
-        usage.push(i % 3 === 0 ? 3000 : 500);
-      }
-      break;
-      
-    case 'gradual':
-      for (let i = 0; i < days; i++) {
-        usage.push(500 + (i * 200));
-      }
-      break;
-  }
-  
-  return usage;
-}
-
-async function handleEconomy(): Promise<Response> {
-  const totalTokens = DB.budgets.reduce((sum, b) => sum + b.totalTokens, 0);
-  const spentTokens = DB.transactions.reduce((sum, t) => sum + t.tokens, 0);
-  
-  const providerMap = new Map<string, { tokens: number; cost: number }>();
-  DB.transactions.forEach(t => {
-    const current = providerMap.get(t.provider) || { tokens: 0, cost: 0 };
-    providerMap.set(t.provider, {
-      tokens: current.tokens + t.tokens,
-      cost: current.cost + t.cost,
-    });
-  });
-  
-  const topProviders = Array.from(providerMap.entries())
-    .map(([name, data]) => ({ name, ...data }))
-    .sort((a, b) => b.tokens - a.tokens)
-    .slice(0, 5);
-  
-  const budgetHealth = DB.budgets.map(budget => {
-    const utilization = (budget.spentTokens / budget.totalTokens) * 100;
-    let status: 'healthy' | 'warning' | 'critical' = 'healthy';
-    
-    if (utilization > 80) status = 'critical';
-    else if (utilization > 60) status = 'warning';
-    
-    return {
-      id: budget.id,
-      name: budget.name,
-      utilization: Math.round(utilization * 100) / 100,
-      status,
-    };
-  });
-  
-  const dashboard: EconomyDashboard = {
-    totalTokens,
-    spentTokens,
-    remainingTokens: totalTokens - spentTokens,
-    dailyAverage: DB.transactions.length > 0 
-      ? Math.round(spentTokens / (DB.transactions.length / 30))
-      : 0,
-    topProviders,
-    budgetHealth,
-  };
-  
-  return createResponse(dashboard);
-}
-
-async function handleSimulate(request: Request): Promise<Response> {
-  try {
-    const body = await request.json() as SimulationRequest;
-    
-    if (!body.providers || body.providers.length === 0) {
-      return createResponse({ error: "Providers required" }, 400);
-    }
-    
-    const dailyUsage = generateTokenUsage(body.tokenUsagePattern, body.durationDays);
-    const totalTokens = dailyUsage.reduce((sum, tokens) => sum + tokens, 0);
-    
-    const dailyBreakdown = dailyUsage.map((tokens, index) => {
-      const optimalProvider = calculateOptimalProvider(body.providers, tokens);
-      const provider = body.providers.find(p => p.name === optimalProvider)!;
-      const cost = provider.costPerToken * tokens;
-      
-      return {
-        day: index + 1,
-        tokens,
-        cost: Math.round(cost * 100) / 100,
-        provider: optimalProvider,
-      };
-    });
-    
-    const totalCost = dailyBreakdown.reduce((sum, day) => sum + day.cost, 0);
-    
-    const worstProvider = body.providers.reduce((worst, current) => 
-      current.costPerToken > worst.costPerToken ? current : worst
-    );
-    const worstCost = worstProvider.costPerToken * totalTokens;
-    
-    const result: SimulationResult = {
-      optimalProvider: calculateOptimalProvider(body.providers, totalTokens),
-      totalCost: Math.round(totalCost * 100) / 100,
-      tokensUsed: totalTokens,
-      dailyBreakdown,
-      savingsComparedToWorst: Math.round((worstCost - totalCost) * 100) / 100,
-    };
-    
-    return createResponse(result);
-  } catch (error) {
-    return createResponse({ error: "Invalid request" }, 400);
-  }
-}
-
-async function handleBudgets(): Promise<Response> {
-  const now = Date.now();
-  const budgets = DB.budgets.map(budget => {
-    const needsReset = now > budget.resetTime;
-    const resetIn = Math.max(0, budget.resetTime - now);
-    
-    return {
-      ...budget,
-      needsReset,
-      resetIn: Math.floor(resetIn / (1000 * 60 * 60 * 24)),
-    };
-  });
-  
-  return createResponse(budgets);
-}
-
-function renderFooter(): string {
-  return `
-    <footer style="
-      position: fixed;
-      bottom: 0;
-      width: 100%;
-      background: #0a0a0f;
-      color: #f59e0b;
-      padding: 1rem;
-      text-align: center;
-      border-top: 1px solid #1a1a2e;
-      font-family: monospace;
-      font-size: 0.9rem;
-    ">
-      Fleet Economy Token System | ${new Date().getFullYear()} | <a href="/health" style="color: #f59e0b; text-decoration: none;">/health</a>
-    </footer>
-  `;
-}
-
-async function handleHealth(): Promise<Response> {
-  const health = {
-    status: "healthy",
-    timestamp: Date.now(),
-    transactions: DB.transactions.length,
-    budgets: DB.budgets.length,
-    uptime: process.uptime ? Math.floor(process.uptime()) : 0,
-  };
-  
-  return createResponse(health);
-}
-
-async function handleRequest(request: Request): Promise<Response> {
-  const url = new URL(request.url);
-  const path = url.pathname;
-  
-  if (path === "/health") {
-    return handleHealth();
-  }
-  
-  if (path === "/api/economy" && request.method === "GET") {
-    return handleEconomy();
-  }
-  
-  if (path === "/api/simulate" && request.method === "POST") {
-    return handleSimulate(request);
-  }
-  
-  if (path === "/api/budgets" && request.method === "GET") {
-    return handleBudgets();
-  }
-  
-  if (path === "/" && request.method === "GET") {
-    const html = `
-      <!DOCTYPE html>
-      <html lang="en" style="background: #0a0a0f; color: #ffffff;">
-      <head>
-        <meta charset="UTF-8">
-        <meta name="viewport" content="width=device-width, initial-scale=1.0">
-        <title>Fleet Economy Dashboard</title>
-        <style>
-          * { margin: 0; padding: 0; box-sizing: border-box; }
-          body { 
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-            background: #0a0a0f;
-            color: #ffffff;
-            min-height: 100vh;
-            padding-bottom: 60px;
-          }
-          .container { max-width: 1200px; margin: 0 auto; padding: 2rem; }
-          .header { 
-            background: linear-gradient(135deg, #0a0a0f 0%, #1a1a2e 100%);
-            padding: 2rem;
-            border-bottom: 2px solid #f59e0b;
-            margin-bottom: 2rem;
-          }
-          .title { 
-            color: #f59e0b;
-            font-size: 2.5rem;
-            margin-bottom: 0.5rem;
-          }
-          .subtitle { color: #94a3b8; font-size: 1.1rem; }
-          .endpoint { 
-            background: #1a1a2e;
-            border: 1px solid #2d2d4d;
-            border-radius: 8px;
-            padding: 1.5rem;
-            margin-bottom: 1rem;
-          }
-          .method { 
-            display: inline-block;
-            padding: 0.25rem 0.75rem;
-            border-radius: 4px;
-            font-weight: bold;
-            margin-right: 1rem;
-          }
-          .get { background: #10b981; color: #000; }
-          .post { background: #f59e0b; color: #000; }
-          .path { 
-            font-family: monospace;
-            color: #60a5fa;
-            font-size: 1.1rem;
-          }
-          .desc { color: #cbd5e1; margin-top: 0.5rem; }
-        </style>
-      </head>
-      <body>
-        <div class="header">
-          <div class="container">
-            <h1 class="title">Fleet Economy</h1>
-            <p class="subtitle">Token economy simulation and optimization system</p>
-          </div>
-        </div>
-        
-        <div class="container">
-          <div class="endpoint">
-            <span class="method get">GET</span>
-            <span class="path">/api/economy</span>
-            <p class="desc">Retrieve current economy dashboard with token tracking and budget health</p>
-          </div>
-          
-          <div class="endpoint">
-            <span class="method post">POST</span>
-            <span class="path">/api/simulate</span>
-            <p class="desc">Run cost allocation simulations with provider pricing comparison</p>
-          </div>
-          
-          <div class="endpoint">
-            <span class="method get">GET</span>
-            <span class="path">/api/budgets</span>
-            <p class="desc">View all budgets with spending limits and reset schedules</p>
-          </div>
-          
-          <div class="endpoint">
-            <span class="method get">GET</span>
-            <span class="path">/health</span>
-            <p class="desc">System health check endpoint</p>
-          </div>
-        </div>
-        
-        ${renderFooter()}
-      </body>
-      </html>
-    `;
-    
-    return new Response(html, {
-      headers: {
-        "Content-Type": "text/html",
-        "X-Frame-Options": "DENY",
-        "Content-Security-Policy": "default-src 'self'; style-src 'self' 'unsafe-inline';",
-      },
-    });
-  }
-  
-  return createResponse({ error: "Not found" }, 404);
-}
+const sh = {"Content-Security-Policy":"default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data: https:; frame-ancestors 'none'","X-Frame-Options":"DENY"};
 
 export default {
   async fetch(request: Request): Promise<Response> {
-    return handleRequest(request);
+    const url = new URL(request.url);
+    if (url.pathname === "/health") {
+      return new Response(JSON.stringify({ status: "ok", timestamp: new Date().toISOString() }), {
+        headers: { "Content-Type": "application/json", ...sh }
+      });
+    }
+    return new Response(html, {
+      headers: { "Content-Type": "text/html;charset=UTF-8", ...sh }
+    });
   }
 };
